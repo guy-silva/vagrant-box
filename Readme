@@ -11,6 +11,9 @@ basically it contains
 - nodejs
 - libzmq
 
+
+All the recipes used were made by others and are available on github, so problems or suggestions go to the owners (you can see on the metadata file in each folder)
+
 [Installation]
 
 You need to install
