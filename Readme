@@ -1,0 +1,39 @@
+[About]
+
+This aims to configure a packer box (with chef installed) to run my Ruby projects with Postgres. But it's generic enough to run any Ruby projects.
+
+basically it contains
+- git
+- rvm
+- ruby 1.9.3
+- postgresql 9.3
+- imagemagik
+- nodejs
+- libzmq
+
+[Installation]
+
+You need to install
+- virtualbox
+- vagrant
+
+you need a vagrant box added with the alias 'precise64-rails-dev' or you'll need to change the vagrant file.
+
+This project runs integrated with this:
+https://github.com/guy-silva/packer-box.git
+
+So if you generate the box from that repo you are good to go...
+
+edit 'Vagrant' file to your needs (pg version, ruby version, synced folder, etc)
+
+[Usage]
+
+run 'vagrant up' and see the magic happening...
+
+for some reason I'm having problem in the first run something with the macaddress, but repeating the command above did the job.
+
+if you end with some problems during the provisioning, you can run 'vagrant provisioning' and it will try again
+
+at the end run 'vagrant ssh' and you should be inside the machine will all the things configured
+
+more details check vagrant and chef documentation
