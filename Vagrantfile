@@ -16,7 +16,8 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   # doesn't already exist on the user's system.
   #config.vm.box_url = "../packer_box/build/ubuntu-12.04.3-server-amd64.box"
 
-  config.vm.synced_folder "~/Projects/tasboa/rails_env/eventfuel", "/home/vagrant/eventfuel-server"
+  config.vm.synced_folder "~/Projects/tasboa/eventfuel-server", "/home/vagrant/eventfuel-server", :type => "nfs"
+  config.vm.network :private_network, ip: "10.0.0.5"
 
   # Create a forwarded port mapping which allows access to a specific port
   # within the machine from a port on the host machine. In the example below,
@@ -25,6 +26,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   config.vm.network "forwarded_port", guest: 3000, host: 3000
   config.vm.network "forwarded_port", guest: 8080, host: 8080
   config.vm.network "forwarded_port", guest: 5432, host: 5432
+  config.vm.network "forwarded_port", guest: 443, host: 443
 
   config.vm.hostname = 'rails-dev-box'
 
@@ -89,32 +91,62 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
   # path, and data_bags path (all relative to this Vagrantfile), and adding
   # some recipes and/or roles.
   #
+
+  #This next bit fixes the 'stdin is not a tty' error when shell provisioning Ubuntu boxes
+  # config.vm.provision :shell,
+    #if there a line that only consists of 'mesg n' in /root/.profile, replace it with 'tty -s && mesg n'
+    # :inline => "(grep -q -E '^mesg n$' /root/.profile && sed -i 's/^mesg n$/tty -s \\&\\& mesg n/g' /root/.profile && echo 'Ignore the previous error about stdin not being a tty. Fixing it now...') || exit 0;"
+
+
+
   config.vm.provision :chef_solo do |chef|
+    #solve the chef log not be buffered by vagrant
+    # chef.custom_config_path = '~/Projects/tasboa/dev-box/vagrant/chef_streaming_fix.rb'
+
+
     chef.cookbooks_path = "cookbooks"
-    
+
     chef.add_recipe "build-essential"
     chef.add_recipe "apt"
     chef.add_recipe  "git"
-    chef.add_recipe 'rvm::vagrant'
-    chef.add_recipe 'rvm::system'
+    # chef.add_recipe 'rvm::vagrant'
+    # chef.add_recipe 'rvm::system'
+    chef.add_recipe "ruby_build"
+    chef.add_recipe "rbenv::system"
     chef.add_recipe "postgresql::server"
     chef.add_recipe "postgresql::libpq"
+    chef.add_recipe "postgresql::contrib"
     chef.add_recipe 'nodejs'
     chef.add_recipe 'libzmq'
     chef.add_recipe 'imagemagick'
+    chef.add_recipe 'oh-my-zsh'
+
 
 
     chef.json = {
-      "rvm" => {
-      # ths instalation of chef for some reason is not in the default path so use this to correct locate the binary 
-        'vagrant' => {
-          'system_chef_solo' => '/opt/chef/bin/chef-solo'
-          },
-        #create the default gemset and ruby 
-        "default_ruby" => "ruby-1.9.3-p448@eventfuel-server"   
-        #use this to add more rubies
-        # "rubies" => ["ruby-1.9.3-p448", "ruby-2.1.0"]
-      }, 
+      # "rvm" => {
+      # # ths instalation of chef for some reason is not in the default path so use this to correct locate the binary
+      #   'vagrant' => {
+      #     'system_chef_solo' => '/opt/chef/bin/chef-solo'
+      #     },
+      #   #create the default gemset and ruby
+      #   "default_ruby" => "ruby-1.9.3-p448@eventfuel-server"
+      #   #use this to add more rubies
+      #   # "rubies" => ["ruby-1.9.3-p448"]
+      # },
+     'rbenv' =>
+      {
+        'rubies'  => ['2.0.0-p353'],
+        'global'  => '2.0.0-p353',
+        'gems'    => {
+          '2.0.0-p353'    => [
+            { 'name'    => 'bundler'},
+            { 'name'    => 'awesome_print'},
+          ],
+        },
+        'vagrant' => {'system_chef_solo' => '/opt/chef/bin/chef-solo'}
+      },
+
       "postgresql" => {
         "ssl" => false ,
         "version" => "9.3",
@@ -142,7 +174,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
             "template"=> "template0",
             "encoding"=> "utf8",
             "locale"=> "en_US.UTF8",
-          }          
+          }
         ],
         "pg_hba" => [
           {:type => 'local', :db => 'all', :user => 'eventfuel', :addr => nil, :method => 'ident'},
@@ -150,14 +182,42 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
           {:type => 'host', :db => 'all', :user => 'all', :addr => '127.0.0.1/32', :method => 'trust'},
           {:type => 'host', :db => 'all', :user => 'all', :addr => '::1/128', :method => 'trust'},
           {:type => 'host', :db => 'all', :user => 'all', :addr => '10.0.0.0/8', :method => 'trust'}
+        ],
+      },
+
+     'oh_my_zsh' => {
+        'users' => [
+          'login' => 'vagrant',
+          'plugins' => ['gem', 'git', 'rails', 'ruby', 'zeus', 'guard']
         ]
       }
+
     }
-    
+
   end
 
+  #it also set awesome_print as the default irb color handler
   # the simplest way to install all the necessary gems cause I havent found a chef recipe to handle it. As rvm by default install bundle this works without problems
-   config.vm.provision :shell, :inline => 'cd /home/vagrant/eventfuel-server && bundle install'
+
+$inline_script = <<SCRIPT
+
+echo 'require "awesome_print"
+AwesomePrint.irb!' >> /home/vagrant/.irbrc
+
+sudo chown -R vagrant /usr/local/rbenv
+
+cd /home/vagrant/eventfuel-server
+bundle install
+rake db:migrate
+
+
+SCRIPT
+# echo 'alias s.kill="kill -9 $(lsof -i tcp:3000 -t)"
+# alias s.up="cd /home/vagrant/eventfuel-server && be thin start"
+# alias s.init="(kill -9 $(lsof -i tcp:3000 -t) ||1) && s.up -d"
+# alias s.devinit="s.init && devlog" ' >> /home/vagrant/.zshrc
+
+   config.vm.provision :shell, :inline => $inline_script
 
   # Enable provisioning with chef server, specifying the chef server URL,
   # and the path to the validation key (relative to this Vagrantfile).
